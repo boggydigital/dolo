@@ -44,18 +44,20 @@ func (dolo *Client) sameContentLength(url *url.URL, dstFilename string) (bool, e
 	return false, nil
 }
 
-func (dolo *Client) Download(url *url.URL, dstDir string, skipSame bool) error {
+func (dolo *Client) Download(url *url.URL, dstDir string, overwrite bool) error {
 
 	dstFilename := filepath.Join(dstDir, path.Base(url.String()))
 
-	sameCL, err := dolo.sameContentLength(url, dstFilename)
-	if err != nil {
-		return err
-	}
+	if !overwrite {
+		sameCL, err := dolo.sameContentLength(url, dstFilename)
+		if err != nil {
+			return err
+		}
 
-	if sameCL && skipSame {
-		log.Println("file already exists and has the same content length")
-		return nil
+		if sameCL {
+			log.Println("file already exists and has the same content length")
+			return nil
+		}
 	}
 
 	resp, err := dolo.httpClient.Get(url.String())
