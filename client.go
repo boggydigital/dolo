@@ -30,6 +30,9 @@ func NewClient(httpClient *http.Client, retries int, notify func(uint64, uint64)
 
 func (dolo *Client) Download(url *url.URL, dstDir string, overwrite bool) error {
 	for rr := 0; rr < dolo.retries; rr++ {
+		if rr > 0 {
+			log.Printf("retrying download again (attempt %d)...\n", rr+1)
+		}
 		err := dolo.download(url, dstDir, overwrite)
 		if err != nil {
 			log.Println("dolo.Download: ", err)
