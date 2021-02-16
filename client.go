@@ -11,17 +11,36 @@ import (
 )
 
 const downloadExt = ".download"
+const maxRetires = 5
 
 type Client struct {
 	httpClient *http.Client
+	retries    int
 	notify     func(uint64, uint64)
 }
 
-func NewClient(httpClient *http.Client, notify func(uint64, uint64)) *Client {
-	return &Client{httpClient: httpClient, notify: notify}
+func NewClient(httpClient *http.Client, retries int, notify func(uint64, uint64)) *Client {
+	if retries < 1 {
+		retries = 1
+	} else if retries > maxRetires {
+		retries = maxRetires
+	}
+	return &Client{httpClient: httpClient, retries: retries, notify: notify}
 }
 
 func (dolo *Client) Download(url *url.URL, dstDir string, overwrite bool) error {
+	for rr := 0; rr < dolo.retries; rr++ {
+		err := dolo.download(url, dstDir, overwrite)
+		if err != nil {
+			log.Println("dolo.Download: ", err)
+		} else {
+			return nil
+		}
+	}
+	return nil
+}
+
+func (dolo *Client) download(url *url.URL, dstDir string, overwrite bool) error {
 	resp, err := dolo.httpClient.Get(url.String())
 	if err != nil {
 		return err
