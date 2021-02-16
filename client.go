@@ -21,24 +21,12 @@ func NewClient(httpClient *http.Client, notify func(uint64, uint64)) *Client {
 	return &Client{httpClient: httpClient, notify: notify}
 }
 
-func (dolo *Client) DownloadUrl(url *url.URL, dstDir string, overwrite bool) error {
+func (dolo *Client) Download(url *url.URL, dstDir string, overwrite bool) error {
 	resp, err := dolo.httpClient.Get(url.String())
 	if err != nil {
 		return err
 	}
 
-	return dolo.downloadResponse(resp, url, dstDir, overwrite)
-}
-
-func (dolo *Client) DownloadReq(req *http.Request, dstDir string, overwrite bool) error {
-	resp, err := dolo.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	return dolo.downloadResponse(resp, req.URL, dstDir, overwrite)
-}
-
-func (dolo *Client) downloadResponse(resp *http.Response, url *url.URL, dstDir string, overwrite bool) error {
 	defer resp.Body.Close()
 
 	dstFilename := filepath.Join(dstDir, path.Base(url.String()))
