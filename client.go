@@ -87,15 +87,8 @@ func (dolo *Client) dstSize(dstFilename string) (int64, error) {
 	return -1, nil
 }
 
-func (dolo *Client) srcHead(url *url.URL) (stat *resourceStat, err error) {
-	resp, err := dolo.httpClient.Head(url.String())
-	if err != nil {
-		return stat, err
-	}
-
-	defer resp.Body.Close()
-
-	stat = &resourceStat{
+func extractStat(resp *http.Response) *resourceStat {
+	stat := &resourceStat{
 		contentLength: resp.ContentLength,
 	}
 
@@ -104,6 +97,46 @@ func (dolo *Client) srcHead(url *url.URL) (stat *resourceStat, err error) {
 		if arh != "" && arh != "none" {
 			stat.acceptRanges = true
 		}
+	}
+
+	return stat
+}
+
+func attemptSrcHead(url *url.URL, httpClient *http.Client) (stat *resourceStat, err error) {
+	resp, err := httpClient.Head(url.String())
+	if err != nil {
+		return stat, err
+	}
+
+	defer resp.Body.Close()
+
+	return extractStat(resp), nil
+}
+
+func (dolo *Client) srcHead(url *url.URL) (stat *resourceStat, err error) {
+
+	cont := true
+	attempt := 0
+
+	for cont {
+		attempt++
+		stat, err = attemptSrcHead(url, dolo.httpClient)
+		if err != nil {
+			return stat, err
+		}
+
+		if !stat.acceptRanges ||
+			attempt == dolo.retries ||
+			(stat.acceptRanges &&
+				stat.contentLength > 0) {
+			cont = false
+		}
+	}
+
+	if stat.acceptRanges &&
+		stat.contentLength == 0 {
+		log.Printf("dolo: accept-ranges = bytes and content-length = 0, won't attempt resuming")
+		stat.acceptRanges = false
 	}
 
 	return stat, err
@@ -156,6 +189,7 @@ func (dolo *Client) download(url *url.URL, dstDir string) (network bool, err err
 	}
 	defer downloadFile.Close()
 
+	network = true
 	if err = dolo.downloadRequest(req, downloadFile); err != nil {
 		return network, err
 	}
@@ -209,10 +243,6 @@ func (dolo *Client) requestAndFile(
 			network = true
 			if err != nil {
 				return network, req, file, err
-			}
-			if stat.contentLength == 0 {
-				log.Printf("conflicting message - accept-ranges = bytes and content-length = 0, won't attempt resuming")
-				stat.acceptRanges = false
 			}
 		}
 
