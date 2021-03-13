@@ -11,8 +11,11 @@ import (
 	"path/filepath"
 )
 
-const downloadExt = ".download"
-const maxRetires = 5
+const (
+	downloadExt             = ".download"
+	maxRetires              = 5
+	dirPerm     os.FileMode = 0755
+)
 
 type Client struct {
 	httpClient         *http.Client
@@ -52,23 +55,23 @@ func NewClient(httpClient *http.Client, notify func(uint64, uint64), opts *Clien
 	return client
 }
 
-func (dolo *Client) Download(url *url.URL, dstDir string) error {
+func (dolo *Client) Download(url *url.URL, dstDir string) (network bool, err error) {
 	for rr := 0; rr < dolo.retries; rr++ {
 		if rr > 0 {
 			if dolo.verbose {
 				log.Printf("retrying download, attempt %d/%d\n", rr+1, dolo.retries)
 			}
 		}
-		err := dolo.download(url, dstDir)
+		network, err = dolo.download(url, dstDir)
 		if err != nil {
 			if dolo.verbose {
 				log.Println("dolo.Download: ", err)
 			}
 		} else {
-			return nil
+			return network, nil
 		}
 	}
-	return nil
+	return network, nil
 }
 
 func (dolo *Client) dstSize(dstFilename string) (int64, error) {
@@ -111,7 +114,11 @@ func (dolo *Client) srcHead(url *url.URL) (stat *resourceStat, err error) {
 // changed.
 // download detects partial downloads (.download files) and would
 // attempt to continue from the last position.
-func (dolo *Client) download(url *url.URL, dstDir string) error {
+func (dolo *Client) download(url *url.URL, dstDir string) (network bool, err error) {
+
+	if err := os.MkdirAll(dstDir, dirPerm); err != nil {
+		return false, err
+	}
 
 	dstFilename := filepath.Join(dstDir, path.Base(url.String()))
 	downloadFilename := dstFilename + downloadExt
@@ -119,39 +126,41 @@ func (dolo *Client) download(url *url.URL, dstDir string) error {
 	// check if destination file (not .download!) has positive size
 	// and optionally, same content length as the source resource.
 	// This is the first opportunity to return early without doing any work
-	exists, stat, err := dolo.checkDstFile(url, dstFilename)
+	network, exists, stat, err := dolo.checkDstFile(url, dstFilename)
 	if err != nil {
-		return err
+		return network, err
 	}
 	if exists {
 		if dolo.verbose {
 			log.Println("skip downloading existing file")
 		}
-		return nil
+		return network, nil
 	}
 
 	// we've established that destination file either doesn't exist or
 	// has different content length. In both cases we need to re-download.
 	// before we do that - check if .download file exists and attempt
 	// resuming download.
-	req, downloadFile, err := dolo.requestAndFile(url, downloadFilename, stat)
+	net, req, downloadFile, err := dolo.requestAndFile(url, downloadFilename, stat)
 	if err != nil {
-		return err
+		return network, err
 	}
+
+	network = network || net
 
 	if downloadFile == nil {
 		downloadFile, err = os.Create(downloadFilename)
 		if err != nil {
-			return err
+			return network, err
 		}
 	}
 	defer downloadFile.Close()
 
 	if err = dolo.downloadRequest(req, downloadFile); err != nil {
-		return err
+		return network, err
 	}
 
-	return os.Rename(downloadFilename, dstFilename)
+	return network, os.Rename(downloadFilename, dstFilename)
 }
 
 func (dolo *Client) downloadRequest(
@@ -178,28 +187,32 @@ func (dolo *Client) downloadRequest(
 func (dolo *Client) requestAndFile(
 	url *url.URL,
 	filename string,
-	stat *resourceStat) (*http.Request, *os.File, error) {
+	stat *resourceStat) (network bool, req *http.Request, file *os.File, err error) {
 
-	req := &http.Request{
+	req = &http.Request{
 		Method: http.MethodGet,
 		URL:    url,
 	}
-	var file *os.File
 
 	if !dolo.resumeDownloads {
-		return req, file, nil
+		return network, req, file, nil
 	}
 
 	downloadSize, err := dolo.dstSize(filename)
 	if err != nil {
-		return nil, nil, err
+		return network, nil, nil, err
 	}
 
 	if downloadSize > 0 {
-		if stat.contentLength == -1 {
+		if stat == nil || stat.contentLength == -1 {
 			stat, err = dolo.srcHead(url)
+			network = true
 			if err != nil {
-				return req, file, err
+				return network, req, file, err
+			}
+			if stat.contentLength == 0 {
+				log.Printf("conflicting message - accept-ranges = bytes and content-length = 0, won't attempt resuming")
+				stat.acceptRanges = false
 			}
 		}
 
@@ -213,42 +226,45 @@ func (dolo *Client) requestAndFile(
 			req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", downloadSize, stat.contentLength-1))
 			file, err = os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
 			if err != nil {
-				return req, file, err
+				return network, req, file, err
 			}
 		}
 	}
 
-	return req, file, nil
+	return network, req, file, nil
 }
 
-func (dolo *Client) checkDstFile(url *url.URL, filename string) (exists bool, stat *resourceStat, err error) {
+func (dolo *Client) checkDstFile(url *url.URL, filename string) (network bool, exists bool, stat *resourceStat, err error) {
 	dstSize, err := dolo.dstSize(filename)
 	if err != nil {
-		return exists, stat, err
+		return network, exists, stat, err
 	}
 
 	exists = dstSize > 0
 
-	if !dolo.checkContentLength {
-		if dolo.verbose {
-			log.Println("destination file exists, " +
-				"has positive size, content length check skipped")
-		}
-		return exists, stat, err
-	} else {
-		stat, err = dolo.srcHead(url)
-		if err != nil {
-			return exists, stat, err
-		}
-
-		if stat.contentLength > 0 && dstSize == stat.contentLength {
+	if exists {
+		if !dolo.checkContentLength {
 			if dolo.verbose {
 				log.Println("destination file exists, " +
-					"passes content length check")
+					"has positive size, content length check skipped")
 			}
-			return exists, stat, err
+			return network, exists, stat, err
+		} else {
+			stat, err = dolo.srcHead(url)
+			network = true
+			if err != nil {
+				return network, exists, stat, err
+			}
+
+			if stat.contentLength > 0 && dstSize == stat.contentLength {
+				if dolo.verbose {
+					log.Println("destination file exists, " +
+						"passes content length check")
+				}
+				return network, exists, stat, err
+			}
 		}
 	}
 
-	return exists, stat, err
+	return network, exists, stat, err
 }
