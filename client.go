@@ -9,25 +9,31 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 )
 
 const (
-	downloadExt             = ".download"
-	maxRetires              = 5
-	dirPerm     os.FileMode = 0755
+	downloadExt                 = ".download"
+	minRetries                  = 1
+	maxRetires                  = 6
+	dirPerm         os.FileMode = 0755
+	minDelaySeconds             = 5
+	maxDelaySeconds             = 60
 )
 
 type Client struct {
 	httpClient         *http.Client
 	notify             func(uint64, uint64)
-	retries            int
+	attempts           int
+	delayAttempts      int
 	checkContentLength bool
 	resumeDownloads    bool
 	verbose            bool
 }
 
 type ClientOptions struct {
-	Retries            int
+	Attempts           int
+	DelayAttempts      int
 	CheckContentLength bool
 	ResumeDownloads    bool
 	Verbose            bool
@@ -38,34 +44,44 @@ type resourceStat struct {
 	acceptRanges  bool
 }
 
+func enforceConstraints(val int, min, max int) int {
+	if val < min {
+		return min
+	} else if val > max {
+		return max
+	}
+	return val
+}
+
 func NewClient(httpClient *http.Client, notify func(uint64, uint64), opts *ClientOptions) *Client {
 	client := &Client{
 		httpClient:         httpClient,
 		notify:             notify,
-		retries:            opts.Retries,
+		attempts:           enforceConstraints(opts.Attempts, minRetries, maxRetires),
+		delayAttempts:      enforceConstraints(opts.DelayAttempts, minDelaySeconds, maxDelaySeconds),
 		checkContentLength: opts.CheckContentLength,
 		resumeDownloads:    opts.ResumeDownloads,
 		verbose:            opts.Verbose,
-	}
-	if client.retries < 1 {
-		client.retries = 1
-	} else if client.retries > maxRetires {
-		client.retries = maxRetires
 	}
 	return client
 }
 
 func (dolo *Client) Download(url *url.URL, dstDir string) (network bool, err error) {
-	for rr := 0; rr < dolo.retries; rr++ {
-		if rr > 0 {
+	for aa := 0; aa < dolo.attempts; aa++ {
+		if aa > 0 {
+			delaySec := dolo.delayAttempts * aa
 			if dolo.verbose {
-				log.Printf("retrying download, attempt %d/%d\n", rr+1, dolo.retries)
+				log.Printf("dolo: delay next download attempt by %d seconds...\n", delaySec)
+			}
+			time.Sleep(time.Duration(delaySec) * time.Second)
+			if dolo.verbose {
+				log.Printf("dolo: retry download attempt %d/%d\n", aa+1, dolo.attempts)
 			}
 		}
 		network, err = dolo.download(url, dstDir)
 		if err != nil {
 			if dolo.verbose {
-				log.Println("dolo.Download: ", err)
+				log.Println("dolo:", err)
 			}
 		} else {
 			return network, nil
@@ -120,13 +136,23 @@ func (dolo *Client) srcHead(url *url.URL) (stat *resourceStat, err error) {
 
 	for cont {
 		attempt++
+		if attempt > 1 {
+			delay := (time.Duration)((attempt - 1) * dolo.delayAttempts)
+			if dolo.verbose {
+				log.Printf("dolo: delay source content info request attempt by %ds...\n", delay)
+			}
+			time.Sleep(delay * time.Second)
+			if dolo.verbose {
+				log.Printf("dolo: source content info request attempt %d/%d\n", attempt, dolo.attempts)
+			}
+		}
 		stat, err = attemptSrcHead(url, dolo.httpClient)
 		if err != nil {
 			return stat, err
 		}
 
 		if !stat.acceptRanges ||
-			attempt == dolo.retries ||
+			attempt == dolo.attempts ||
 			(stat.acceptRanges &&
 				stat.contentLength > 0) {
 			cont = false
@@ -135,7 +161,9 @@ func (dolo *Client) srcHead(url *url.URL) (stat *resourceStat, err error) {
 
 	if stat.acceptRanges &&
 		stat.contentLength == 0 {
-		log.Printf("dolo: accept-ranges = bytes and content-length = 0, won't attempt resuming")
+		if dolo.verbose {
+			log.Printf("dolo: accept-ranges = bytes and content-length = 0 -> download restart")
+		}
 		stat.acceptRanges = false
 	}
 
@@ -165,7 +193,7 @@ func (dolo *Client) download(url *url.URL, dstDir string) (network bool, err err
 	}
 	if exists {
 		if dolo.verbose {
-			log.Println("skip downloading existing file")
+			log.Println("dolo: skip downloading existing file")
 		}
 		return network, nil
 	}
@@ -194,7 +222,15 @@ func (dolo *Client) download(url *url.URL, dstDir string) (network bool, err err
 		return network, err
 	}
 
-	return network, os.Rename(downloadFilename, dstFilename)
+	osStat, err := os.Stat(downloadFilename)
+	if err != nil {
+		return network, err
+	}
+	if osStat.Size() > 0 {
+		return network, os.Rename(downloadFilename, dstFilename)
+	}
+
+	return network, nil
 }
 
 func (dolo *Client) downloadRequest(
@@ -248,7 +284,7 @@ func (dolo *Client) requestAndFile(
 
 		if stat.acceptRanges {
 			if dolo.verbose {
-				log.Printf("attempting to resume download, bytes %d to %d", downloadSize, stat.contentLength-1)
+				log.Printf("dolo: resume download, bytes %d to %d", downloadSize, stat.contentLength-1)
 			}
 			if req.Header == nil {
 				req.Header = make(map[string][]string, 0)
@@ -275,7 +311,7 @@ func (dolo *Client) checkDstFile(url *url.URL, filename string) (network bool, e
 	if exists {
 		if !dolo.checkContentLength {
 			if dolo.verbose {
-				log.Println("destination file exists, " +
+				log.Println("dolo: destination file exists, " +
 					"has positive size, content length check skipped")
 			}
 			return network, exists, stat, err
@@ -288,8 +324,8 @@ func (dolo *Client) checkDstFile(url *url.URL, filename string) (network bool, e
 
 			if stat.contentLength > 0 && dstSize == stat.contentLength {
 				if dolo.verbose {
-					log.Println("destination file exists, " +
-						"passes content length check")
+					log.Println("dolo: destination file exists, " +
+						"matches source content length")
 				}
 				return network, exists, stat, err
 			}
