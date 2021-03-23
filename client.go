@@ -26,6 +26,7 @@ type Client struct {
 	notify             func(uint64, uint64)
 	attempts           int
 	delayAttempts      int
+	minSizeComplete    int64
 	checkContentLength bool
 	resumeDownloads    bool
 	verbose            bool
@@ -34,6 +35,7 @@ type Client struct {
 type ClientOptions struct {
 	Attempts           int
 	DelayAttempts      int
+	MinSizeComplete    int64
 	CheckContentLength bool
 	ResumeDownloads    bool
 	Verbose            bool
@@ -58,6 +60,7 @@ func NewClient(httpClient *http.Client, notify func(uint64, uint64), opts *Clien
 		httpClient:         httpClient,
 		notify:             notify,
 		attempts:           enforceConstraints(opts.Attempts, minRetries, maxRetires),
+		minSizeComplete:    opts.MinSizeComplete,
 		delayAttempts:      enforceConstraints(opts.DelayAttempts, minDelaySeconds, maxDelaySeconds),
 		checkContentLength: opts.CheckContentLength,
 		resumeDownloads:    opts.ResumeDownloads,
@@ -306,7 +309,8 @@ func (dolo *Client) checkDstFile(url *url.URL, filename string) (network bool, e
 		return network, exists, stat, err
 	}
 
-	exists = dstSize > 0
+	// not using zero in case server
+	exists = dstSize > dolo.minSizeComplete
 
 	if exists {
 		if !dolo.checkContentLength {
