@@ -69,7 +69,7 @@ func NewClient(httpClient *http.Client, notify func(uint64, uint64), opts *Clien
 	return client
 }
 
-func (dolo *Client) Download(url *url.URL, dstDir string) (network bool, err error) {
+func (dolo *Client) Download(url *url.URL, dstDir, dstFilename string) (network bool, err error) {
 	for aa := 0; aa < dolo.attempts; aa++ {
 		if aa > 0 {
 			delaySec := dolo.delayAttempts * aa
@@ -81,7 +81,7 @@ func (dolo *Client) Download(url *url.URL, dstDir string) (network bool, err err
 				log.Printf("dolo: retry download attempt %d/%d\n", aa+1, dolo.attempts)
 			}
 		}
-		network, err = dolo.download(url, dstDir)
+		network, err = dolo.download(url, dstDir, dstFilename)
 		if err != nil {
 			if dolo.verbose {
 				log.Println("dolo:", err)
@@ -178,13 +178,15 @@ func (dolo *Client) srcHead(url *url.URL) (stat *resourceStat, err error) {
 // changed.
 // download detects partial downloads (.download files) and would
 // attempt to continue from the last position.
-func (dolo *Client) download(url *url.URL, dstDir string) (network bool, err error) {
+func (dolo *Client) download(url *url.URL, dstDir, dstFilename string) (network bool, err error) {
 
 	if err := os.MkdirAll(dstDir, dirPerm); err != nil {
 		return false, err
 	}
 
-	dstFilename := filepath.Join(dstDir, path.Base(url.String()))
+	if dstFilename == "" {
+		dstFilename = filepath.Join(dstDir, path.Base(url.String()))
+	}
 	downloadFilename := dstFilename + downloadExt
 
 	// check if destination file (not .download!) has positive size
