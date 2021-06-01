@@ -55,6 +55,15 @@ func enforceConstraints(val int, min, max int) int {
 	return val
 }
 
+func Defaults() *ClientOptions {
+	return &ClientOptions{
+		Attempts:        3,
+		DelayAttempts:   5,
+		ResumeDownloads: true,
+		MinSizeComplete: 512,
+	}
+}
+
 func NewClient(httpClient *http.Client, notify func(uint64, uint64), opts *ClientOptions) *Client {
 	client := &Client{
 		httpClient:         httpClient,
@@ -185,8 +194,11 @@ func (dolo *Client) download(url *url.URL, dstDir, dstFilename string) (network 
 	}
 
 	if dstFilename == "" {
-		dstFilename = filepath.Join(dstDir, path.Base(url.String()))
+		dstFilename = path.Base(url.String())
 	}
+
+	dstFilename = filepath.Join(dstDir, dstFilename)
+
 	downloadFilename := dstFilename + downloadExt
 
 	// check if destination file (not .download!) has positive size
