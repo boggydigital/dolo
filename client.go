@@ -19,6 +19,7 @@ const (
 	dirPerm         os.FileMode = 0755
 	minDelaySeconds             = 5
 	maxDelaySeconds             = 60
+	blockSize                   = 32 * 1024
 )
 
 type Client struct {
@@ -95,6 +96,7 @@ func (dolo *Client) Download(url *url.URL, dstDir, dstFilename string) (network 
 			if dolo.verbose {
 				log.Println("dolo:", err)
 			}
+			return network, err
 		} else {
 			return network, nil
 		}
@@ -261,11 +263,34 @@ func (dolo *Client) downloadRequest(
 	defer resp.Body.Close()
 
 	prg := &progress{
-		total:  uint64(resp.ContentLength),
-		notify: dolo.notify}
+		total: uint64(resp.ContentLength)}
 
-	if _, err = io.Copy(dstFile, io.TeeReader(resp.Body, prg)); err != nil {
-		return err
+	//only use notifications for files that are larger than 32K,
+	//as io.Copy currently has this set for a single copy attempt
+	if resp.ContentLength > blockSize {
+		prg.notify = dolo.notify
+		if dolo.notify != nil {
+			dolo.notify(0, uint64(resp.ContentLength))
+		}
+	}
+
+	// using variable timeout approach from https://medium.com/@simonfrey/go-as-in-golang-standard-net-http-config-will-break-your-production-environment-1360871cb72b
+	timer := time.AfterFunc(5*time.Second, func() {
+		resp.Body.Close()
+	})
+
+	for {
+		//We reset the timer, for the variable time
+		timer.Reset(1 * time.Second)
+		_, err = io.CopyN(dstFile, io.TeeReader(resp.Body, prg), blockSize)
+		if err == io.EOF {
+			// This is not an error in the common sense
+			// io.EOF tells us, that we did read the complete body
+			break
+		} else if err != nil {
+			//You should do error handling here
+			return err
+		}
 	}
 
 	return nil
