@@ -2,6 +2,7 @@ package dolo
 
 import (
 	"fmt"
+	"github.com/boggydigital/nod"
 	"io"
 	"log"
 	"net/http"
@@ -24,7 +25,6 @@ const (
 
 type Client struct {
 	httpClient         *http.Client
-	notify             func(uint64, uint64)
 	attempts           int
 	delayAttempts      int
 	minSizeComplete    int64
@@ -65,10 +65,9 @@ func Defaults() *ClientOptions {
 	}
 }
 
-func NewClient(httpClient *http.Client, notify func(uint64, uint64), opts *ClientOptions) *Client {
+func NewClient(httpClient *http.Client, opts *ClientOptions) *Client {
 	client := &Client{
 		httpClient:         httpClient,
-		notify:             notify,
 		attempts:           enforceConstraints(opts.Attempts, minRetries, maxRetires),
 		minSizeComplete:    opts.MinSizeComplete,
 		delayAttempts:      enforceConstraints(opts.DelayAttempts, minDelaySeconds, maxDelaySeconds),
@@ -79,7 +78,7 @@ func NewClient(httpClient *http.Client, notify func(uint64, uint64), opts *Clien
 	return client
 }
 
-func (dolo *Client) Download(url *url.URL, dstDir, dstFilename string) (network bool, err error) {
+func (dolo *Client) Download(url *url.URL, dstDir, dstFilename string, tpw nod.TotalProgressWriter) (network bool, err error) {
 	for aa := 0; aa < dolo.attempts; aa++ {
 		if aa > 0 {
 			delaySec := dolo.delayAttempts * aa
@@ -91,7 +90,7 @@ func (dolo *Client) Download(url *url.URL, dstDir, dstFilename string) (network 
 				log.Printf("dolo: retry download attempt %d/%d\n", aa+1, dolo.attempts)
 			}
 		}
-		network, err = dolo.download(url, dstDir, dstFilename)
+		network, err = dolo.download(url, dstDir, dstFilename, tpw)
 		if err != nil {
 			if dolo.verbose {
 				log.Println("dolo:", err)
@@ -189,7 +188,7 @@ func (dolo *Client) srcHead(url *url.URL) (stat *resourceStat, err error) {
 // changed.
 // download detects partial downloads (.download files) and would
 // attempt to continue from the last position.
-func (dolo *Client) download(url *url.URL, dstDir, dstFilename string) (network bool, err error) {
+func (dolo *Client) download(url *url.URL, dstDir, dstFilename string, tpw nod.TotalProgressWriter) (network bool, err error) {
 
 	if err := os.MkdirAll(dstDir, dirPerm); err != nil {
 		return false, err
@@ -237,7 +236,7 @@ func (dolo *Client) download(url *url.URL, dstDir, dstFilename string) (network 
 	defer downloadFile.Close()
 
 	network = true
-	if err = dolo.downloadRequest(req, downloadFile); err != nil {
+	if err = dolo.downloadRequest(req, downloadFile, tpw); err != nil {
 		return network, err
 	}
 
@@ -254,7 +253,8 @@ func (dolo *Client) download(url *url.URL, dstDir, dstFilename string) (network 
 
 func (dolo *Client) downloadRequest(
 	srcReq *http.Request,
-	dstFile *os.File) error {
+	dstFile *os.File,
+	tpw nod.TotalProgressWriter) error {
 
 	resp, err := dolo.httpClient.Do(srcReq)
 	if err != nil {
@@ -262,27 +262,19 @@ func (dolo *Client) downloadRequest(
 	}
 	defer resp.Body.Close()
 
-	prg := &progress{
-		total: uint64(resp.ContentLength)}
-
-	//only use notifications for files that are larger than 32K,
-	//as io.Copy currently has this set for a single copy attempt
-	if resp.ContentLength > blockSize {
-		prg.notify = dolo.notify
-		if dolo.notify != nil {
-			dolo.notify(0, uint64(resp.ContentLength))
-		}
+	if tpw != nil {
+		tpw.Total(uint64(resp.ContentLength))
 	}
 
 	// using variable timeout approach from https://medium.com/@simonfrey/go-as-in-golang-standard-net-http-config-will-break-your-production-environment-1360871cb72b
-	timer := time.AfterFunc(5*time.Second, func() {
+	timer := time.AfterFunc(10*time.Second, func() {
 		resp.Body.Close()
 	})
 
 	for {
 		//We reset the timer, for the variable time
-		timer.Reset(1 * time.Second)
-		_, err = io.CopyN(dstFile, io.TeeReader(resp.Body, prg), blockSize)
+		timer.Reset(10 * time.Second)
+		_, err = io.CopyN(dstFile, io.TeeReader(resp.Body, tpw), blockSize)
 		if err == io.EOF {
 			// This is not an error in the common sense
 			// io.EOF tells us, that we did read the complete body
