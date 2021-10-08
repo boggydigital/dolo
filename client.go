@@ -190,8 +190,10 @@ func (dolo *Client) srcHead(url *url.URL) (stat *resourceStat, err error) {
 // attempt to continue from the last position.
 func (dolo *Client) download(url *url.URL, dstDir, dstFilename string, tpw nod.TotalProgressWriter) (network bool, err error) {
 
-	if err := os.MkdirAll(dstDir, dirPerm); err != nil {
-		return false, err
+	if dstDir != "" {
+		if err := os.MkdirAll(dstDir, dirPerm); err != nil {
+			return false, err
+		}
 	}
 
 	if dstFilename == "" {
@@ -220,7 +222,7 @@ func (dolo *Client) download(url *url.URL, dstDir, dstFilename string, tpw nod.T
 	// has different content length. In both cases we need to re-download.
 	// before we do that - check if .download file exists and attempt
 	// resuming download.
-	net, req, downloadFile, err := dolo.requestAndFile(url, downloadFilename, stat)
+	net, req, downloadFile, err := dolo.requestAndFile(url, downloadFilename, stat, tpw)
 	if err != nil {
 		return network, err
 	}
@@ -291,7 +293,8 @@ func (dolo *Client) downloadRequest(
 func (dolo *Client) requestAndFile(
 	url *url.URL,
 	filename string,
-	stat *resourceStat) (network bool, req *http.Request, file *os.File, err error) {
+	stat *resourceStat,
+	tpw nod.TotalProgressWriter) (network bool, req *http.Request, file *os.File, err error) {
 
 	req = &http.Request{
 		Method: http.MethodGet,
@@ -324,6 +327,10 @@ func (dolo *Client) requestAndFile(
 				req.Header = make(map[string][]string, 0)
 			}
 			req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", downloadSize, stat.contentLength-1))
+
+			tpw.Total(uint64(stat.contentLength))
+			tpw.Progress(uint64(downloadSize))
+
 			file, err = os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
 			if err != nil {
 				return network, req, file, err
