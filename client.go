@@ -3,7 +3,6 @@ package dolo
 import (
 	"fmt"
 	"github.com/boggydigital/nod"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -268,23 +267,8 @@ func (dolo *Client) downloadRequest(
 		tpw.Total(uint64(resp.ContentLength))
 	}
 
-	// using variable timeout approach from https://medium.com/@simonfrey/go-as-in-golang-standard-net-http-config-will-break-your-production-environment-1360871cb72b
-	timer := time.AfterFunc(10*time.Second, func() {
-		resp.Body.Close()
-	})
-
-	for {
-		//We reset the timer, for the variable time
-		timer.Reset(10 * time.Second)
-		_, err = io.CopyN(dstFile, io.TeeReader(resp.Body, tpw), blockSize)
-		if err == io.EOF {
-			// This is not an error in the common sense
-			// io.EOF tells us, that we did read the complete body
-			break
-		} else if err != nil {
-			//You should do error handling here
-			return err
-		}
+	if err := Copy(dstFile, resp.Body, tpw); err != nil {
+		return err
 	}
 
 	return nil
@@ -328,8 +312,11 @@ func (dolo *Client) requestAndFile(
 			}
 			req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", downloadSize, stat.contentLength-1))
 
-			tpw.Total(uint64(stat.contentLength))
-			tpw.Progress(uint64(downloadSize))
+			if tpw != nil &&
+				stat.contentLength > 0 {
+				tpw.Total(uint64(stat.contentLength - 1))
+				tpw.Current(uint64(downloadSize))
+			}
 
 			file, err = os.OpenFile(filename, os.O_APPEND|os.O_WRONLY, 0644)
 			if err != nil {
