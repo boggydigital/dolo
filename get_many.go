@@ -15,7 +15,7 @@ type indexReadCloser struct {
 }
 
 type IndexSetter interface {
-	Set(index int, src io.ReadCloser) error
+	Set(int, io.ReadCloser, chan io.Closer, chan error)
 	Len() int
 }
 
@@ -25,14 +25,27 @@ func GetSetOne(
 	indexSetter IndexSetter,
 	httpClient *http.Client) error {
 
+	errors := make(chan error)
+	writeClosers := make(chan io.Closer)
+
+	defer close(errors)
+	defer close(writeClosers)
+
 	resp, err := httpClient.Get(url.String())
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if err := indexSetter.Set(index, resp.Body); err != nil {
+	go indexSetter.Set(index, resp.Body, writeClosers, errors)
+
+	select {
+	case err := <-errors:
 		return err
+	case wc := <-writeClosers:
+		if err := wc.Close(); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -50,9 +63,11 @@ func GetSetMany(
 
 	errors := make(chan error)
 	indexReadClosers := make(chan *indexReadCloser)
+	writeClosers := make(chan io.Closer)
 
 	defer close(indexReadClosers)
 	defer close(errors)
+	defer close(writeClosers)
 
 	tpw.TotalInt(len(urls))
 
@@ -79,11 +94,11 @@ func GetSetMany(
 		case err := <-errors:
 			return tpw.EndWithError(err)
 		case irc := <-indexReadClosers:
-			src := irc.readCloser
-			if err := indexSetter.Set(irc.index, src); err != nil {
+			go indexSetter.Set(irc.index, irc.readCloser, writeClosers, errors)
+		case wc := <-writeClosers:
+			if err := wc.Close(); err != nil {
 				return tpw.EndWithError(err)
 			}
-			irc.readCloser.Close()
 			remaining--
 			concurrentPages++
 		}
