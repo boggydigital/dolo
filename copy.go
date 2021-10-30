@@ -24,7 +24,9 @@ func Copy(dst io.Writer, src io.ReadCloser, tpw nod.TotalProgressWriter) error {
 			// io.EOF tells us, that we did read the complete body
 			break
 		} else if err != nil {
-			tpw.Error(err)
+			if tpw != nil {
+				tpw.Error(err)
+			}
 			return err
 		}
 	}

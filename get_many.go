@@ -19,7 +19,26 @@ type IndexSetter interface {
 	Len() int
 }
 
-func GetMany(
+func GetSetOne(
+	url *url.URL,
+	index int,
+	indexSetter IndexSetter,
+	httpClient *http.Client) error {
+
+	resp, err := httpClient.Get(url.String())
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if err := indexSetter.Set(index, resp.Body); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func GetSetMany(
 	urls []*url.URL,
 	indexSetter IndexSetter,
 	httpClient *http.Client,
