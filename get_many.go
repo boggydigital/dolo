@@ -28,40 +28,7 @@ type IndexSetter interface {
 	Len() int
 }
 
-func GetSetOne(
-	index int,
-	urls []*url.URL,
-	indexSetter IndexSetter,
-	httpClient *http.Client) error {
-
-	if index < 0 || index >= len(urls) {
-		return fmt.Errorf("index out of bounds")
-	}
-
-	errors := make(chan error)
-	completion := make(chan bool)
-
-	defer close(errors)
-	defer close(completion)
-
-	resp, err := httpClient.Get(urls[index].String())
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	go indexSetter.Set(index, resp.Body, completion, errors)
-
-	select {
-	case err := <-errors:
-		return err
-	case <-completion:
-	}
-
-	return nil
-}
-
-func GetSetMany(
+func GetSet(
 	urls []*url.URL,
 	indexSetter IndexSetter,
 	httpClient *http.Client,
@@ -79,7 +46,9 @@ func GetSetMany(
 	defer close(errors)
 	defer close(completion)
 
-	tpw.TotalInt(len(urls))
+	if len(urls) > 1 {
+		tpw.TotalInt(len(urls))
+	}
 
 	current, total := 0, len(urls)
 	concurrentPages := runtime.NumCPU()
