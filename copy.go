@@ -6,14 +6,16 @@ import (
 	"time"
 )
 
+const timeout = 10
+
 func Copy(dst io.Writer, src io.ReadCloser, tpw nod.TotalProgressWriter) error {
 	// using variable timeout approach from https://medium.com/@simonfrey/go-as-in-golang-standard-net-http-config-will-break-your-production-environment-1360871cb72b
-	timer := time.AfterFunc(10*time.Second, func() {
+	timer := time.AfterFunc(timeout*time.Second, func() {
 		src.Close()
 	})
 
 	for {
-		timer.Reset(10 * time.Second)
+		timer.Reset(timeout * time.Second)
 		var reader io.Reader = src
 		if tpw != nil {
 			reader = io.TeeReader(src, tpw)

@@ -9,43 +9,53 @@ import (
 	"runtime"
 )
 
+const maxConcurrentDownloads = 8
+
+type counter struct {
+	current   int
+	total     int
+	remaining int
+}
+
 type indexReadCloser struct {
 	index      int
 	readCloser io.ReadCloser
 }
 
 type IndexSetter interface {
-	Set(int, io.ReadCloser, chan io.Closer, chan error)
+	Set(int, io.ReadCloser, chan bool, chan error)
+	Exists(int) bool
 	Len() int
 }
 
 func GetSetOne(
-	url *url.URL,
 	index int,
+	urls []*url.URL,
 	indexSetter IndexSetter,
 	httpClient *http.Client) error {
 
+	if index < 0 || index >= len(urls) {
+		return fmt.Errorf("index out of bounds")
+	}
+
 	errors := make(chan error)
-	writeClosers := make(chan io.Closer)
+	completion := make(chan bool)
 
 	defer close(errors)
-	defer close(writeClosers)
+	defer close(completion)
 
-	resp, err := httpClient.Get(url.String())
+	resp, err := httpClient.Get(urls[index].String())
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	go indexSetter.Set(index, resp.Body, writeClosers, errors)
+	go indexSetter.Set(index, resp.Body, completion, errors)
 
 	select {
 	case err := <-errors:
 		return err
-	case wc := <-writeClosers:
-		if err := wc.Close(); err != nil {
-			return err
-		}
+	case <-completion:
 	}
 
 	return nil
@@ -63,27 +73,36 @@ func GetSetMany(
 
 	errors := make(chan error)
 	indexReadClosers := make(chan *indexReadCloser)
-	writeClosers := make(chan io.Closer)
+	completion := make(chan bool)
 
 	defer close(indexReadClosers)
 	defer close(errors)
-	defer close(writeClosers)
+	defer close(completion)
 
 	tpw.TotalInt(len(urls))
 
 	current, total := 0, len(urls)
 	concurrentPages := runtime.NumCPU()
+	if concurrentPages > maxConcurrentDownloads {
+		concurrentPages = maxConcurrentDownloads
+	}
 
 	remaining := total - current
 	for remaining > 0 {
+
+		if indexSetter.Exists(current) {
+			current++
+			remaining--
+			if total > 1 {
+				tpw.Increment()
+			}
+			continue
+		}
 
 		for i := 0; i < concurrentPages; i++ {
 			current++
 			if current > total {
 				break
-			}
-			if total > 1 {
-				tpw.Increment()
 			}
 			index := current - 1
 			go getReadCloser(urls[index], index, httpClient, indexReadClosers, errors)
@@ -92,15 +111,20 @@ func GetSetMany(
 
 		select {
 		case err := <-errors:
-			return tpw.EndWithError(err)
-		case irc := <-indexReadClosers:
-			go indexSetter.Set(irc.index, irc.readCloser, writeClosers, errors)
-		case wc := <-writeClosers:
-			if err := wc.Close(); err != nil {
-				return tpw.EndWithError(err)
-			}
+			tpw.Error(err)
 			remaining--
 			concurrentPages++
+			if total > 1 {
+				tpw.Increment()
+			}
+		case irc := <-indexReadClosers:
+			go indexSetter.Set(irc.index, irc.readCloser, completion, errors)
+		case <-completion:
+			remaining--
+			concurrentPages++
+			if total > 1 {
+				tpw.Increment()
+			}
 		}
 	}
 
