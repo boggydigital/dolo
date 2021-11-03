@@ -20,7 +20,7 @@ func (fis *fileIndexSetter) Set(index int, src io.ReadCloser, completion chan bo
 	defer src.Close()
 
 	if index < 0 || index >= len(fis.filenames) {
-		errors <- fmt.Errorf("file index out of bounds")
+		errors <- fmt.Errorf("file current out of bounds")
 		return
 	}
 

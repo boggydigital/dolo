@@ -6,16 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"runtime"
 )
-
-const maxConcurrentDownloads = 8
-
-type counter struct {
-	current   int
-	total     int
-	remaining int
-}
 
 type indexReadCloser struct {
 	index      int
@@ -28,6 +19,9 @@ type IndexSetter interface {
 	Len() int
 }
 
+//GetSet downloads URLs and sets them to storage using indexes. E.g. URLs[index] is expected to be
+//received and set by indexSetter(index). GetSet can use provided http.Client for authenticated requests.
+//Finally, it supports reporting progress via provided nod.TotalProgressWriter object (optional).
 func GetSet(
 	urls []*url.URL,
 	indexSetter IndexSetter,
@@ -46,54 +40,37 @@ func GetSet(
 	defer close(errors)
 	defer close(completion)
 
-	if len(urls) > 1 {
-		tpw.TotalInt(len(urls))
-	}
+	ct := newConcurrencyCounter(len(urls), tpw)
 
-	current, total := 0, len(urls)
-	concurrentPages := runtime.NumCPU()
-	if concurrentPages > maxConcurrentDownloads {
-		concurrentPages = maxConcurrentDownloads
-	}
+	for ct.hasRemaining() {
 
-	remaining := total - current
-	for remaining > 0 {
-
-		if indexSetter.Exists(current) {
-			current++
-			remaining--
-			if total > 1 {
-				tpw.Increment()
-			}
+		//performance optimization to support index setters that can provide an existence based on index.
+		//for an example implementation check fileIndexSetter.Exists that checks if there is a local file
+		//with a filename equal to fileIndexSetter.filenames[index]
+		if indexSetter.Exists(ct.current()) {
+			ct.complete()
 			continue
 		}
 
-		for i := 0; i < concurrentPages; i++ {
-			current++
-			if current > total {
+		for i := 0; i < ct.allowedConcurrent(); i++ {
+			if !ct.canSchedule() {
 				break
 			}
-			index := current - 1
-			go getReadCloser(urls[index], index, httpClient, indexReadClosers, errors)
+
+			go getReadCloser(urls[ct.current()], ct.current(), httpClient, indexReadClosers, errors)
+
+			ct.scheduleNext()
 		}
-		concurrentPages = 0
+		ct.flushRemainingConcurrent()
 
 		select {
 		case err := <-errors:
 			tpw.Error(err)
-			remaining--
-			concurrentPages++
-			if total > 1 {
-				tpw.Increment()
-			}
+			ct.complete()
 		case irc := <-indexReadClosers:
 			go indexSetter.Set(irc.index, irc.readCloser, completion, errors)
 		case <-completion:
-			remaining--
-			concurrentPages++
-			if total > 1 {
-				tpw.Increment()
-			}
+			ct.complete()
 		}
 	}
 
