@@ -2,10 +2,9 @@ package dolo
 
 import (
 	"github.com/boggydigital/nod"
-	"runtime"
 )
 
-var maxConcurrentOps = runtime.NumCPU() / 2
+var maxConcurrentOps = 4
 
 type concurrencyCounter struct {
 	currentItem         int

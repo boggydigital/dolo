@@ -32,6 +32,11 @@ func GetSet(
 		return fmt.Errorf("unequal number of urls and writers")
 	}
 
+	tpw.Log("dolo.GetSet: starting to process %d URL(s)", len(urls))
+	for i := 0; i < len(urls); i++ {
+		tpw.Log("%d: %s", i, urls[i])
+	}
+
 	errors := make(chan error)
 	indexReadClosers := make(chan *indexReadCloser)
 	completion := make(chan bool)
@@ -90,6 +95,13 @@ func getReadCloser(
 			resp.Body.Close()
 		}
 		errors <- err
+		return
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errors <- fmt.Errorf("URL index %d response got status code %d", index, resp.StatusCode)
+		if resp != nil {
+			resp.Body.Close()
+		}
 		return
 	}
 

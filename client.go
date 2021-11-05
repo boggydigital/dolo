@@ -38,7 +38,6 @@ type ClientOptions struct {
 	MinSizeComplete    int64
 	CheckContentLength bool
 	ResumeDownloads    bool
-	Verbose            bool
 }
 
 type resourceStat struct {
@@ -72,7 +71,7 @@ func NewClient(httpClient *http.Client, opts *ClientOptions) *Client {
 		delayAttempts:      enforceConstraints(opts.DelayAttempts, minDelaySeconds, maxDelaySeconds),
 		checkContentLength: opts.CheckContentLength,
 		resumeDownloads:    opts.ResumeDownloads,
-		verbose:            opts.Verbose,
+		//verbose:            opts.Verbose,
 	}
 	return client
 }
