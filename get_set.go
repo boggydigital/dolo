@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/boggydigital/nod"
 	"io"
-	"net/http"
 	"net/url"
 )
 
@@ -22,19 +21,20 @@ type IndexSetter interface {
 //GetSet downloads URLs and sets them to storage using indexes. E.g. URLs[index] is expected to be
 //received and set by indexSetter(index). GetSet can use provided http.Client for authenticated requests.
 //Finally, it supports reporting progress via provided nod.TotalProgressWriter object (optional).
-func GetSet(
+func (cl *Client) GetSet(
 	urls []*url.URL,
 	indexSetter IndexSetter,
-	httpClient *http.Client,
 	tpw nod.TotalProgressWriter) error {
 
 	if len(urls) != indexSetter.Len() {
 		return fmt.Errorf("unequal number of urls and writers")
 	}
 
-	tpw.Log("dolo.GetSet: starting to process %d URL(s)", len(urls))
-	for i := 0; i < len(urls); i++ {
-		tpw.Log("%d: %s", i, urls[i])
+	if tpw != nil {
+		tpw.Log("dolo.GetSet: starting to process %d URL(s)", len(urls))
+		for i := 0; i < len(urls); i++ {
+			tpw.Log("%d: %s", i, urls[i])
+		}
 	}
 
 	errors := make(chan error)
@@ -62,7 +62,7 @@ func GetSet(
 				break
 			}
 
-			go getReadCloser(urls[ct.current()], ct.current(), httpClient, indexReadClosers, errors)
+			go cl.getReadCloser(urls[ct.current()], ct.current(), indexReadClosers, errors)
 
 			ct.scheduleNext()
 		}
@@ -82,14 +82,13 @@ func GetSet(
 	return nil
 }
 
-func getReadCloser(
+func (cl *Client) getReadCloser(
 	u *url.URL,
 	index int,
-	httpClient *http.Client,
 	indexReadClosers chan *indexReadCloser,
 	errors chan error) {
 
-	resp, err := httpClient.Get(u.String())
+	resp, err := cl.httpClient.Get(u.String())
 	if err != nil {
 		if resp != nil {
 			resp.Body.Close()
