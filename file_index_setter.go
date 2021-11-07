@@ -38,7 +38,7 @@ func (fis *fileIndexSetter) Set(index int, src io.ReadCloser, completion chan bo
 	}
 
 	// individual file set operations are not progressive
-	if err := Copy(file, src, nil); err != nil {
+	if err := CopyWithProgress(file, src, nil); err != nil {
 		errors <- err
 		return
 	}
