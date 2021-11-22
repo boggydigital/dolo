@@ -15,40 +15,40 @@ func NewFileIndexSetter(filenames []string) *fileIndexSetter {
 	return &fileIndexSetter{filenames: filenames}
 }
 
-func (fis *fileIndexSetter) Set(index int, src io.ReadCloser, completion chan bool, errors chan error) {
+func (fis *fileIndexSetter) Set(index int, src io.ReadCloser, results chan *IndexResult, errors chan *IndexError) {
 
 	defer src.Close()
 
 	if index < 0 || index >= len(fis.filenames) {
-		errors <- fmt.Errorf("file current out of bounds")
+		errors <- NewIndexError(index, fmt.Errorf("file nextAvailable out of bounds"))
 		return
 	}
 
 	dir, _ := filepath.Split(fis.filenames[index])
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		if err := os.MkdirAll(dir, dirPerm); err != nil {
-			errors <- err
+			errors <- NewIndexError(index, err)
 		}
 	}
 
 	file, err := os.Create(fis.filenames[index])
 	if err != nil {
-		errors <- err
+		errors <- NewIndexError(index, err)
 		return
 	}
 
 	// individual file set operations are not progressive
 	if err := CopyWithProgress(file, src, nil); err != nil {
-		errors <- err
+		errors <- NewIndexError(index, err)
 		return
 	}
 
 	if err := file.Close(); err != nil {
-		errors <- err
+		errors <- NewIndexError(index, err)
 		return
 	}
 
-	completion <- true
+	results <- NewIndexResult(index, true)
 }
 
 func (fis *fileIndexSetter) Len() int {

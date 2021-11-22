@@ -12,7 +12,7 @@ import (
 //Download gets remote resource, attempting to resume existing partial downloads if the previous
 //attempt got interrupted. Download supports nod progress reporting.
 //Download will use provided path parts (see NewResourceContext for file name, directory rules),
-//and if no parts were specified - will download to the current working directory and use source
+//and if no parts were specified - will download to the nextAvailable working directory and use source
 //URL path base for a filename.
 func (dc *Client) Download(u *url.URL, tpw nod.TotalProgressWriter, pathParts ...string) error {
 

@@ -3,20 +3,8 @@ package dolo
 import (
 	"fmt"
 	"github.com/boggydigital/nod"
-	"io"
 	"net/url"
 )
-
-type indexReadCloser struct {
-	index      int
-	readCloser io.ReadCloser
-}
-
-type IndexSetter interface {
-	Set(int, io.ReadCloser, chan bool, chan error)
-	Exists(int) bool
-	Len() int
-}
 
 //GetSet downloads URLs and sets them to storage using indexes. E.g. URLs[index] is expected to be
 //received and set by indexSetter(index). GetSet can use provided http.Client for authenticated requests.
@@ -31,51 +19,74 @@ func (cl *Client) GetSet(
 	}
 
 	if tpw != nil {
-		tpw.Log("dolo.GetSet: starting to process %d URL(s)", len(urls))
+		tpw.Log("dolo.GetSet: %d URL(s)", len(urls))
 		for i := 0; i < len(urls); i++ {
 			tpw.Log("%d: %s", i, urls[i])
 		}
 	}
 
-	errors := make(chan error)
+	errors := make(chan *IndexError)
 	indexReadClosers := make(chan *indexReadCloser)
-	completion := make(chan bool)
+	results := make(chan *IndexResult)
 
 	defer close(indexReadClosers)
 	defer close(errors)
-	defer close(completion)
+	defer close(results)
 
-	ct := newConcurrencyCounter(len(urls), tpw)
+	total := len(urls)
 
-	for ct.hasRemaining() {
+	if total > 1 && tpw != nil {
+		tpw.TotalInt(total)
+	}
 
-		//performance optimization to support index setters that can provide an existence based on index.
-		//for an example implementation check fileIndexSetter.Exists that checks if there is a local file
-		//with a filename equal to fileIndexSetter.filenames[index]
-		if indexSetter.Exists(ct.current()) {
-			ct.complete()
-			continue
-		}
+	ct := newIndexTracker(total)
 
-		for i := 0; i < ct.allowedConcurrent(); i++ {
-			if !ct.canSchedule() {
+	//work can be one of the following:
+	//- requested items that need to be processed
+	//- actively processing items for which we'd be waiting error or completion results
+	for ct.hasWork() {
+
+		//requested -> processing phase, start items processing pipeline while there is an opportunity
+		//to add more: we have outstanding requested items and have availability to process items
+		for ct.hasRequested() && ct.canProcess() {
+
+			np := ct.processNext()
+			if np == -1 {
 				break
 			}
 
-			go cl.getReadCloser(urls[ct.current()], ct.current(), indexReadClosers, errors)
+			//performance optimization to support index setters that can provide an existence based on index.
+			//for an example implementation check fileIndexSetter.Exists that checks if there is a local file
+			//with a filename equal to fileIndexSetter.filenames[index]
+			if indexSetter.Exists(np) {
+				ct.complete(np)
+				if total > 1 && tpw != nil {
+					tpw.Increment()
+				}
+				continue
+			}
 
-			ct.scheduleNext()
+			go cl.getReadCloser(urls[np], np, indexReadClosers, errors)
 		}
-		ct.flushRemainingConcurrent()
+
+		//break out of processing loop if there is no outstanding work we'd wait results for
+		if !ct.hasProcessing() {
+			break
+		}
 
 		select {
-		case err := <-errors:
-			tpw.Error(err)
-			ct.complete()
+		case indErr := <-errors:
+			if tpw != nil {
+				tpw.Error(indErr.err)
+			}
+			ct.complete(indErr.index)
 		case irc := <-indexReadClosers:
-			go indexSetter.Set(irc.index, irc.readCloser, completion, errors)
-		case <-completion:
-			ct.complete()
+			go indexSetter.Set(irc.index, irc.readCloser, results, errors)
+		case indRes := <-results:
+			ct.complete(indRes.index)
+			if total > 1 && tpw != nil {
+				tpw.Increment()
+			}
 		}
 	}
 
@@ -86,21 +97,20 @@ func (cl *Client) getReadCloser(
 	u *url.URL,
 	index int,
 	indexReadClosers chan *indexReadCloser,
-	errors chan error) {
+	errors chan *IndexError) {
 
 	resp, err := cl.httpClient.Get(u.String())
+
 	if err != nil {
-		if resp != nil {
-			resp.Body.Close()
-		}
-		errors <- err
+		defer resp.Body.Close()
+		errors <- &IndexError{index, err}
 		return
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		errors <- fmt.Errorf("URL index %d response got status code %d", index, resp.StatusCode)
-		if resp != nil {
-			resp.Body.Close()
-		}
+		defer resp.Body.Close()
+		errors <- &IndexError{
+			index,
+			fmt.Errorf("URL index %d response got status code %d", index, resp.StatusCode)}
 		return
 	}
 

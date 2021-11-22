@@ -33,3 +33,5 @@ func NewClient(httpClient *http.Client, opts *ClientOptions) *Client {
 	}
 	return client
 }
+
+var DefaultClient = NewClient(http.DefaultClient, Defaults())
