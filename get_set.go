@@ -58,7 +58,9 @@ func (cl *Client) GetSet(
 			//performance optimization to support index setters that can provide an existence based on index.
 			//for an example implementation check fileIndexSetter.Exists that checks if there is a local file
 			//with a filename equal to fileIndexSetter.filenames[index]
-			if indexSetter.Exists(np) {
+			//additionally - if the source url is nil - skip it
+			if indexSetter.Exists(np) ||
+				urls[np] == nil {
 				ct.complete(np)
 				if total > 1 && tpw != nil {
 					tpw.Increment()
