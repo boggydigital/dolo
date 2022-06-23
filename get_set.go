@@ -104,7 +104,9 @@ func (cl *Client) getReadCloser(
 	resp, err := cl.httpClient.Get(u.String())
 
 	if err != nil {
-		defer resp.Body.Close()
+		if resp != nil {
+			defer resp.Body.Close()
+		}
 		errors <- &IndexError{index, err}
 		return
 	}
