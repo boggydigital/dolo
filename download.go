@@ -158,6 +158,7 @@ func (dc *Client) checkPartialDownload(u *url.URL, rsc *resourceContext) error {
 func (dc *Client) downloadResource(u *url.URL, rsc *resourceContext, tpw nod.TotalProgressWriter) error {
 
 	req := &http.Request{
+		Header: http.Header{},
 		Method: http.MethodGet,
 		URL:    u,
 	}
