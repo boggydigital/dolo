@@ -9,11 +9,11 @@ import (
 	"strconv"
 )
 
-//Download gets remote resource, attempting to resume existing partial downloads if the previous
-//attempt got interrupted. Download supports nod progress reporting.
-//Download will use provided path parts (see NewResourceContext for file name, directory rules),
-//and if no parts were specified - will download to the nextAvailable working directory and use source
-//URL path base for a filename.
+// Download gets remote resource, attempting to resume existing partial downloads if the previous
+// attempt got interrupted. Download supports nod progress reporting.
+// Download will use provided path parts (see NewResourceContext for file name, directory rules),
+// and if no parts were specified - will download to the nextAvailable working directory and use source
+// URL path base for a filename.
 func (dc *Client) Download(u *url.URL, tpw nod.TotalProgressWriter, pathParts ...string) error {
 
 	//process path parts and set local directory and filename using conventional rules
@@ -51,8 +51,8 @@ func (dc *Client) Download(u *url.URL, tpw nod.TotalProgressWriter, pathParts ..
 	return rsc.completePartialDownload()
 }
 
-//checkRemoteStat performs HEAD request and extracts Accept-Ranges and
-//Content-Length headers information
+// checkRemoteStat performs HEAD request and extracts Accept-Ranges and
+// Content-Length headers information
 func (dc *Client) checkRemoteStat(url *url.URL, rsc *resourceContext) error {
 
 	resp, err := dc.httpClient.Head(url.String())
@@ -84,10 +84,10 @@ func (dc *Client) checkRemoteStat(url *url.URL, rsc *resourceContext) error {
 	return nil
 }
 
-//checkLocalFile adds information about local download - file that would exist
-//in the same directory and have the same name as requested download resource.
-//If requested checkLocalFile will compare existing file size to remote resource
-//content length.
+// checkLocalFile adds information about local download - file that would exist
+// in the same directory and have the same name as requested download resource.
+// If requested checkLocalFile will compare existing file size to remote resource
+// content length.
 func (dc *Client) checkLocalFile(u *url.URL, rsc *resourceContext) error {
 
 	if stat, err := os.Stat(rsc.downloadPath()); err != nil && !os.IsNotExist(err) {
@@ -120,10 +120,10 @@ func (dc *Client) checkLocalFile(u *url.URL, rsc *resourceContext) error {
 	return nil
 }
 
-//checkPartialDownload adds information about partial download - file that would exist
-//in the same directory and have same name as requested download resource (plus .download extension).
-//checkPartialDownload will also checkRemoteStat, unless already done, because we need to know
-//if the server supports resuming downloads before attempting that.
+// checkPartialDownload adds information about partial download - file that would exist
+// in the same directory and have same name as requested download resource (plus .download extension).
+// checkPartialDownload will also checkRemoteStat, unless already done, because we need to know
+// if the server supports resuming downloads before attempting that.
 func (dc *Client) checkPartialDownload(u *url.URL, rsc *resourceContext) error {
 
 	//don't attempt resuming partial downloads if not requested in options, or we checked
@@ -152,21 +152,24 @@ func (dc *Client) checkPartialDownload(u *url.URL, rsc *resourceContext) error {
 	return nil
 }
 
-//downloadResource requests remote source response and copies bytes into partial download file.
-//downloadResource will resume download when we've established it's feasible, however if the server
-//would not honor that request - it'll restart file download. downloadResource supports nod progress reporting.
+// downloadResource requests remote source response and copies bytes into partial download file.
+// downloadResource will resume download when we've established it's feasible, however if the server
+// would not honor that request - it'll restart file download. downloadResource supports nod progress reporting.
 func (dc *Client) downloadResource(u *url.URL, rsc *resourceContext, tpw nod.TotalProgressWriter) error {
 
-	req := &http.Request{
-		Header: http.Header{},
-		Method: http.MethodGet,
-		URL:    u,
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return err
 	}
 
 	//when resourceContext context indicates that we should attempt downloading existing partial download -
 	//add Range: bytes={from}- header
 	if rsc.shouldTryResuming(dc.resumeDownloads) {
 		rsc.setRangeHeader(req, tpw)
+	}
+
+	if dc.userAgent != "" {
+		req.Header.Set("User-Agent", dc.userAgent)
 	}
 
 	resp, err := dc.httpClient.Do(req)

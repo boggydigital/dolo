@@ -84,9 +84,6 @@ func (rsc *resourceContext) shouldTryResuming(resumeDownloads bool) bool {
 }
 
 func (rsc *resourceContext) setRangeHeader(req *http.Request, tpw nod.TotalProgressWriter) {
-	if req.Header == nil {
-		req.Header = make(map[string][]string, 0)
-	}
 
 	req.Header.Set(
 		"Range",

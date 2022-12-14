@@ -3,12 +3,13 @@ package dolo
 import (
 	"fmt"
 	"github.com/boggydigital/nod"
+	"net/http"
 	"net/url"
 )
 
-//GetSet downloads URLs and sets them to storage using indexes. E.g. URLs[index] is expected to be
-//received and set by indexSetter(index). GetSet can use provided http.Client for authenticated requests.
-//Finally, it supports reporting progress via provided nod.TotalProgressWriter object (optional).
+// GetSet downloads URLs and sets them to storage using indexes. E.g. URLs[index] is expected to be
+// received and set by indexSetter(index). GetSet can use provided http.Client for authenticated requests.
+// Finally, it supports reporting progress via provided nod.TotalProgressWriter object (optional).
 func (cl *Client) GetSet(
 	urls []*url.URL,
 	indexSetter IndexSetter,
@@ -101,7 +102,16 @@ func (cl *Client) getReadCloser(
 	indexReadClosers chan *indexReadCloser,
 	errors chan *IndexError) {
 
-	resp, err := cl.httpClient.Get(u.String())
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		errors <- &IndexError{index, err}
+	}
+
+	if cl.userAgent != "" {
+		req.Header.Set("User-Agent", cl.userAgent)
+	}
+
+	resp, err := cl.httpClient.Do(req)
 
 	if err != nil {
 		if resp != nil {
