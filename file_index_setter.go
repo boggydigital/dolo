@@ -11,7 +11,7 @@ type fileIndexSetter struct {
 	filenames []string
 }
 
-func NewFileIndexSetter(filenames []string) *fileIndexSetter {
+func NewFileIndexSetter(filenames []string) IndexSetter {
 	return &fileIndexSetter{filenames: filenames}
 }
 
@@ -65,4 +65,12 @@ func (fis *fileIndexSetter) Exists(index int) bool {
 	}
 
 	return false
+}
+
+func (fis *fileIndexSetter) IsModifiedAfter(index int, since int64) bool {
+	if stat, err := os.Stat(fis.filenames[index]); err != nil {
+		return true
+	} else {
+		return stat.ModTime().Unix() > since
+	}
 }
