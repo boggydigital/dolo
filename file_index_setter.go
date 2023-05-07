@@ -1,6 +1,7 @@
 package dolo
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -49,6 +50,14 @@ func (fis *fileIndexSetter) Set(index int, src io.ReadCloser, results chan *Inde
 	}
 
 	results <- NewIndexResult(index, true)
+}
+
+func (fis *fileIndexSetter) Get(index int) (io.ReadCloser, error) {
+	if index < 0 || index >= len(fis.filenames) {
+		return nil, errors.New("file index out of bounds")
+	}
+
+	return os.Open(fis.filenames[index])
 }
 
 func (fis *fileIndexSetter) Len() int {
