@@ -8,4 +8,5 @@ type IndexSetter interface {
 	Exists(int) bool
 	Len() int
 	IsModifiedAfter(index int, since int64) bool
+	CurrentModTime(index int) (int64, error)
 }

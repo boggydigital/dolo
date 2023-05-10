@@ -77,9 +77,25 @@ func (fis *fileIndexSetter) Exists(index int) bool {
 }
 
 func (fis *fileIndexSetter) IsModifiedAfter(index int, since int64) bool {
+	if index < 0 || index >= len(fis.filenames) {
+		return false
+	}
+
 	if stat, err := os.Stat(fis.filenames[index]); err != nil {
 		return true
 	} else {
 		return stat.ModTime().Unix() > since
+	}
+}
+
+func (fis *fileIndexSetter) CurrentModTime(index int) (int64, error) {
+	if index < 0 || index >= len(fis.filenames) {
+		return -1, nil
+	}
+
+	if stat, err := os.Stat(fis.filenames[index]); err != nil {
+		return -1, err
+	} else {
+		return stat.ModTime().Unix(), nil
 	}
 }
