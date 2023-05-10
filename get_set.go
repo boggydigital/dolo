@@ -5,6 +5,7 @@ import (
 	"github.com/boggydigital/nod"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // GetSet downloads URLs and sets them to storage using indexes. E.g. URLs[index] is expected to be
@@ -69,7 +70,12 @@ func (cl *Client) GetSet(
 				continue
 			}
 
-			go cl.getReadCloser(urls[np], np, indexReadClosers, errors)
+			modStr := ""
+			if mod, err := indexSetter.CurrentModTime(np); err == nil && mod > 0 {
+				modStr = time.Unix(mod, 0).UTC().Format(http.TimeFormat)
+			}
+
+			go cl.getReadCloser(urls[np], np, modStr, indexReadClosers, errors)
 		}
 
 		//break out of processing loop if there is no outstanding work we'd wait results for
@@ -79,10 +85,13 @@ func (cl *Client) GetSet(
 
 		select {
 		case indErr := <-errors:
-			if tpw != nil {
+			if tpw != nil && indErr.err != nil {
 				tpw.Error(indErr.err)
 			}
 			ct.complete(indErr.index)
+			if total > 1 && tpw != nil {
+				tpw.Increment()
+			}
 		case irc := <-indexReadClosers:
 			go indexSetter.Set(irc.index, irc.readCloser, results, errors)
 		case indRes := <-results:
@@ -99,6 +108,7 @@ func (cl *Client) GetSet(
 func (cl *Client) getReadCloser(
 	u *url.URL,
 	index int,
+	modStr string,
 	indexReadClosers chan *indexReadCloser,
 	errors chan *IndexError) {
 
@@ -111,15 +121,21 @@ func (cl *Client) getReadCloser(
 		req.Header.Set("User-Agent", cl.userAgent)
 	}
 
+	if modStr != "" {
+		req.Header.Set("If-Modified-Since", modStr)
+	}
+
 	resp, err := cl.httpClient.Do(req)
 
-	if err != nil {
+	if err != nil ||
+		resp.StatusCode == http.StatusNotModified {
 		if resp != nil {
 			defer resp.Body.Close()
 		}
 		errors <- &IndexError{index, err}
 		return
 	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		defer resp.Body.Close()
 		errors <- &IndexError{
