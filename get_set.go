@@ -72,7 +72,7 @@ func (cl *Client) GetSet(
 
 			modStr := ""
 			if mod, err := indexSetter.CurrentModTime(np); err == nil && mod > 0 {
-				modStr = time.Unix(mod, 0).UTC().Format(http.TimeFormat)
+				modStr = time.Unix(mod, 0).Format(http.TimeFormat)
 			}
 
 			go cl.getReadCloser(urls[np], np, modStr, indexReadClosers, errors)
