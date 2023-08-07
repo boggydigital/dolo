@@ -36,7 +36,7 @@ func NewResourceContext(u *url.URL, pathParts ...string) *resourceContext {
 	//2.2) otherwise use component as local directory
 	//3) if more than one component was specified - join them to get directory and filename
 	if len(pathParts) == 0 {
-		rsc.localFilename = filepath.Base(u.String())
+		rsc.localFilename = filepath.Base(u.Path)
 	} else if len(pathParts) == 1 {
 		if filepath.Ext(pathParts[0]) != "" {
 			rsc.localFilename = pathParts[0]
