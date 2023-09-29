@@ -1,6 +1,7 @@
 package dolo
 
 import (
+	"errors"
 	"fmt"
 	"github.com/boggydigital/nod"
 	"net/http"
@@ -14,10 +15,14 @@ import (
 func (cl *Client) GetSet(
 	urls []*url.URL,
 	indexSetter IndexSetter,
-	tpw nod.TotalProgressWriter) error {
+	tpw nod.TotalProgressWriter) map[int]error {
 
-	if len(urls) != indexSetter.Len() {
-		return fmt.Errorf("unequal number of urls and writers")
+	indexErrors := make(map[int]error)
+
+	if len(urls) > indexSetter.Len() {
+		for i := indexSetter.Len() - 1; i < len(urls); i++ {
+			indexErrors[i] = errors.New("not enough setters for this URL")
+		}
 	}
 
 	if tpw != nil {
@@ -27,12 +32,12 @@ func (cl *Client) GetSet(
 		}
 	}
 
-	errors := make(chan *IndexError)
+	errs := make(chan *IndexError)
 	indexReadClosers := make(chan *indexReadCloser)
 	results := make(chan *IndexResult)
 
 	defer close(indexReadClosers)
-	defer close(errors)
+	defer close(errs)
 	defer close(results)
 
 	total := len(urls)
@@ -75,7 +80,7 @@ func (cl *Client) GetSet(
 				modStr = time.Unix(mod, 0).Format(http.TimeFormat)
 			}
 
-			go cl.getReadCloser(urls[np], np, modStr, indexReadClosers, errors)
+			go cl.getReadCloser(urls[np], np, modStr, indexReadClosers, errs)
 		}
 
 		//break out of processing loop if there is no outstanding work we'd wait results for
@@ -84,7 +89,8 @@ func (cl *Client) GetSet(
 		}
 
 		select {
-		case indErr := <-errors:
+		case indErr := <-errs:
+			indexErrors[indErr.index] = indErr.err
 			if tpw != nil && indErr.err != nil {
 				tpw.Error(indErr.err)
 			}
@@ -93,7 +99,7 @@ func (cl *Client) GetSet(
 				tpw.Increment()
 			}
 		case irc := <-indexReadClosers:
-			go indexSetter.Set(irc.index, irc.readCloser, results, errors)
+			go indexSetter.Set(irc.index, irc.readCloser, results, errs)
 		case indRes := <-results:
 			ct.complete(indRes.index)
 			if total > 1 && tpw != nil {
@@ -102,7 +108,7 @@ func (cl *Client) GetSet(
 		}
 	}
 
-	return nil
+	return indexErrors
 }
 
 func (cl *Client) getReadCloser(
