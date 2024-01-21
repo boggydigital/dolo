@@ -15,7 +15,8 @@ import (
 func (cl *Client) GetSet(
 	urls []*url.URL,
 	indexSetter IndexSetter,
-	tpw nod.TotalProgressWriter) map[int]error {
+	tpw nod.TotalProgressWriter,
+	force bool) map[int]error {
 
 	indexErrors := make(map[int]error)
 
@@ -66,7 +67,7 @@ func (cl *Client) GetSet(
 			//for an example implementation check fileIndexSetter.Exists that checks if there is a local file
 			//with a filename equal to fileIndexSetter.filenames[index]
 			//additionally - if the source url is nil - skip it
-			if indexSetter.Exists(np) ||
+			if (indexSetter.Exists(np) && !force) ||
 				urls[np] == nil {
 				ct.complete(np)
 				if total > 1 && tpw != nil {
