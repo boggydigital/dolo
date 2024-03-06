@@ -14,7 +14,7 @@ import (
 // Download will use provided path parts (see NewResourceContext for file name, directory rules),
 // and if no parts were specified - will download to the nextAvailable working directory and use source
 // URL path base for a filename.
-func (dc *Client) Download(u *url.URL, tpw nod.TotalProgressWriter, pathParts ...string) error {
+func (dc *Client) Download(u *url.URL, force bool, tpw nod.TotalProgressWriter, pathParts ...string) error {
 
 	//process path parts and set local directory and filename using conventional rules
 	rsc := NewResourceContext(u, pathParts...)
@@ -24,21 +24,24 @@ func (dc *Client) Download(u *url.URL, tpw nod.TotalProgressWriter, pathParts ..
 		return err
 	}
 
-	//first opportunity to return early - check if local file (not .download!) exists:
-	//- file at local path must exist
-	//- it must have positive size
-	//- (if set in dolo client options) it should have size matching content length of the remote resourceContext
-	if err := dc.checkLocalFile(u, rsc); err != nil {
-		return err
-	}
-	if rsc.localFileExists {
-		return nil
-	}
+	//unless asked to force download from origin...
+	if !force {
+		//..use the first opportunity to return early - check if local file (not .download!) exists -
+		//- file at local path must exist
+		//- it must have positive size
+		//- (if set in dolo client options) it should have size matching content length of the remote resourceContext
+		if err := dc.checkLocalFile(u, rsc); err != nil {
+			return err
+		}
+		if rsc.localFileExists {
+			return nil
+		}
 
-	//check if a partial download exists (e.g. filename.ext.download)
-	//add information for it in the resourceContext context
-	if err := dc.checkPartialDownload(u, rsc); err != nil {
-		return err
+		//...check if a partial download exists (e.g. filename.ext.download)
+		//add information for it in the resourceContext context
+		if err := dc.checkPartialDownload(u, rsc); err != nil {
+			return err
+		}
 	}
 
 	//at this point we've got all resourceContext context information available
