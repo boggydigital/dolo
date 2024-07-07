@@ -77,7 +77,7 @@ func (cl *Client) GetSet(
 			}
 
 			modStr := ""
-			if mod, err := indexSetter.CurrentModTime(np); err == nil && mod > 0 {
+			if mod, err := indexSetter.ModTime(np); err == nil && mod > 0 {
 				modStr = time.Unix(mod, 0).Format(http.TimeFormat)
 			}
 

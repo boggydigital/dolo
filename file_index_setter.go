@@ -76,19 +76,21 @@ func (fis *fileIndexSetter) Exists(index int) bool {
 	return false
 }
 
-func (fis *fileIndexSetter) IsModifiedAfter(index int, since int64) bool {
+func (fis *fileIndexSetter) IsUpdatedAfter(index int, since int64) (bool, error) {
 	if index < 0 || index >= len(fis.filenames) {
-		return false
+		return false, nil
 	}
 
-	if stat, err := os.Stat(fis.filenames[index]); err != nil {
-		return true
+	if stat, err := os.Stat(fis.filenames[index]); err == nil {
+		return stat.ModTime().Unix() > since, nil
+	} else if os.IsNotExist(err) {
+		return false, nil
 	} else {
-		return stat.ModTime().Unix() > since
+		return false, err
 	}
 }
 
-func (fis *fileIndexSetter) CurrentModTime(index int) (int64, error) {
+func (fis *fileIndexSetter) ModTime(index int) (int64, error) {
 	if index < 0 || index >= len(fis.filenames) {
 		return -1, nil
 	}
