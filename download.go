@@ -58,7 +58,16 @@ func (dc *Client) Download(u *url.URL, force bool, tpw nod.TotalProgressWriter, 
 // Content-Length headers information
 func (dc *Client) checkRemoteStat(url *url.URL, rsc *resourceContext) error {
 
-	resp, err := dc.httpClient.Head(url.String())
+	req, err := http.NewRequest(http.MethodHead, url.String(), nil)
+	if err != nil {
+		return err
+	}
+
+	if dc.requiresBasicAuth() {
+		req.SetBasicAuth(dc.username, dc.password)
+	}
+
+	resp, err := dc.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -173,6 +182,10 @@ func (dc *Client) downloadResource(u *url.URL, rsc *resourceContext, tpw nod.Tot
 
 	if dc.userAgent != "" {
 		req.Header.Set("User-Agent", dc.userAgent)
+	}
+
+	if dc.requiresBasicAuth() {
+		req.SetBasicAuth(dc.username, dc.password)
 	}
 
 	resp, err := dc.httpClient.Do(req)

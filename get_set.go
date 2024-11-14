@@ -122,6 +122,7 @@ func (cl *Client) getReadCloser(
 	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
 	if err != nil {
 		errors <- &IndexError{index, err}
+		return
 	}
 
 	if cl.userAgent != "" {
@@ -130,6 +131,10 @@ func (cl *Client) getReadCloser(
 
 	if modStr != "" {
 		req.Header.Set("If-Modified-Since", modStr)
+	}
+
+	if cl.requiresBasicAuth() {
+		req.SetBasicAuth(cl.username, cl.password)
 	}
 
 	resp, err := cl.httpClient.Do(req)

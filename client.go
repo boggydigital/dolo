@@ -13,6 +13,8 @@ type Client struct {
 	userAgent          string
 	checkContentLength bool
 	resumeDownloads    bool
+	username           string
+	password           string
 }
 
 type ClientOptions struct {
