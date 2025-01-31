@@ -8,5 +8,5 @@ type IndexSetter interface {
 	Exists(int) bool
 	Len() int
 	IsUpdatedAfter(index int, since int64) (bool, error)
-	ModTime(index int) (int64, error)
+	FileModTime(index int) (int64, error)
 }

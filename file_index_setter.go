@@ -82,7 +82,7 @@ func (fis *fileIndexSetter) IsUpdatedAfter(index int, since int64) (bool, error)
 	}
 
 	if stat, err := os.Stat(fis.filenames[index]); err == nil {
-		return stat.ModTime().Unix() > since, nil
+		return stat.ModTime().UTC().Unix() > since, nil
 	} else if os.IsNotExist(err) {
 		return false, nil
 	} else {
@@ -90,7 +90,7 @@ func (fis *fileIndexSetter) IsUpdatedAfter(index int, since int64) (bool, error)
 	}
 }
 
-func (fis *fileIndexSetter) ModTime(index int) (int64, error) {
+func (fis *fileIndexSetter) FileModTime(index int) (int64, error) {
 	if index < 0 || index >= len(fis.filenames) {
 		return -1, nil
 	}
@@ -98,6 +98,6 @@ func (fis *fileIndexSetter) ModTime(index int) (int64, error) {
 	if stat, err := os.Stat(fis.filenames[index]); err != nil {
 		return -1, err
 	} else {
-		return stat.ModTime().Unix(), nil
+		return stat.ModTime().UTC().Unix(), nil
 	}
 }
