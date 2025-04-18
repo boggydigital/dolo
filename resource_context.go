@@ -39,7 +39,7 @@ func NewResourceContext(u *url.URL, pathParts ...string) *resourceContext {
 		rsc.localFilename = filepath.Base(u.Path)
 	} else if len(pathParts) == 1 {
 		if filepath.Ext(pathParts[0]) != "" {
-			rsc.localFilename = pathParts[0]
+			rsc.localDir, rsc.localFilename = filepath.Split(pathParts[0])
 		} else {
 			rsc.localDir = pathParts[0]
 			rsc.localFilename = filepath.Base(u.String())
