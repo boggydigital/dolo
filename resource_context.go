@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -38,12 +39,16 @@ func NewResourceContext(u *url.URL, pathParts ...string) *resourceContext {
 	if len(pathParts) == 0 {
 		rsc.localFilename = filepath.Base(u.Path)
 	} else if len(pathParts) == 1 {
-		if filepath.Ext(pathParts[0]) != "" {
+
+		if strings.HasSuffix(pathParts[0], filepath.Base(u.Path)) {
+			rsc.localDir, rsc.localFilename = filepath.Split(pathParts[0])
+		} else if filepath.Ext(pathParts[0]) != "" {
 			rsc.localDir, rsc.localFilename = filepath.Split(pathParts[0])
 		} else {
 			rsc.localDir = pathParts[0]
 			rsc.localFilename = filepath.Base(u.String())
 		}
+
 	} else {
 		rsc.localDir, rsc.localFilename = filepath.Split(filepath.Join(pathParts...))
 	}
