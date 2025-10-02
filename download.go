@@ -2,11 +2,12 @@ package dolo
 
 import (
 	"fmt"
-	"github.com/boggydigital/nod"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
+
+	"github.com/boggydigital/nod"
 )
 
 // Download gets remote resource, attempting to resume existing partial downloads if the previous
@@ -63,8 +64,8 @@ func (dc *Client) checkRemoteStat(url *url.URL, rsc *resourceContext) error {
 		return err
 	}
 
-	if dc.requiresBasicAuth() {
-		req.SetBasicAuth(dc.username, dc.password)
+	if dc.token != "" {
+		req.Header.Set("Authorization", "Bearer "+dc.token)
 	}
 
 	resp, err := dc.httpClient.Do(req)
@@ -184,8 +185,8 @@ func (dc *Client) downloadResource(u *url.URL, rsc *resourceContext, tpw nod.Tot
 		req.Header.Set("User-Agent", dc.userAgent)
 	}
 
-	if dc.requiresBasicAuth() {
-		req.SetBasicAuth(dc.username, dc.password)
+	if dc.token != "" {
+		req.Header.Set("Authorization", "Bearer "+dc.token)
 	}
 
 	resp, err := dc.httpClient.Do(req)

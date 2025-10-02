@@ -13,8 +13,7 @@ type Client struct {
 	userAgent          string
 	checkContentLength bool
 	resumeDownloads    bool
-	username           string
-	password           string
+	token              string
 }
 
 type ClientOptions struct {
@@ -45,3 +44,7 @@ func NewClient(httpClient *http.Client, opts *ClientOptions) *Client {
 }
 
 var DefaultClient = NewClient(http.DefaultClient, Defaults())
+
+func (c *Client) SetAuthorizationBearer(token string) {
+	c.token = token
+}
