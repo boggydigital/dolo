@@ -9,11 +9,12 @@ const (
 )
 
 type Client struct {
-	httpClient         *http.Client
-	userAgent          string
-	checkContentLength bool
-	resumeDownloads    bool
-	token              string
+	httpClient          *http.Client
+	userAgent           string
+	checkContentLength  bool
+	resumeDownloads     bool
+	authorizationBearer string
+	cookies             map[string]string
 }
 
 type ClientOptions struct {
@@ -45,6 +46,10 @@ func NewClient(httpClient *http.Client, opts *ClientOptions) *Client {
 
 var DefaultClient = NewClient(http.DefaultClient, Defaults())
 
-func (c *Client) SetAuthorizationBearer(token string) {
-	c.token = token
+func (dc *Client) SetAuthorizationBearer(token string) {
+	dc.authorizationBearer = token
+}
+
+func (dc *Client) SetCookies(values map[string]string) {
+	dc.cookies = values
 }

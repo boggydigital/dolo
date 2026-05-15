@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/boggydigital/nod"
 )
@@ -55,6 +56,20 @@ func (dc *Client) Download(u *url.URL, force bool, tpw nod.TotalProgressWriter, 
 	return rsc.completePartialDownload()
 }
 
+func (dc *Client) setAuthorization(req *http.Request) {
+	if dc.authorizationBearer != "" {
+		req.Header.Set("Authorization", "Bearer "+dc.authorizationBearer)
+	}
+
+	if len(dc.cookies) > 0 {
+		var cookieValues []string
+		for key, value := range dc.cookies {
+			cookieValues = append(cookieValues, key+"="+value)
+		}
+		req.Header.Set("Cookie", strings.Join(cookieValues, "; "))
+	}
+}
+
 // checkRemoteStat performs HEAD request and extracts Accept-Ranges and
 // Content-Length headers information
 func (dc *Client) checkRemoteStat(url *url.URL, rsc *resourceContext) error {
@@ -64,9 +79,7 @@ func (dc *Client) checkRemoteStat(url *url.URL, rsc *resourceContext) error {
 		return err
 	}
 
-	if dc.token != "" {
-		req.Header.Set("Authorization", "Bearer "+dc.token)
-	}
+	dc.setAuthorization(req)
 
 	resp, err := dc.httpClient.Do(req)
 	if err != nil {
@@ -185,9 +198,7 @@ func (dc *Client) downloadResource(u *url.URL, rsc *resourceContext, tpw nod.Tot
 		req.Header.Set("User-Agent", dc.userAgent)
 	}
 
-	if dc.token != "" {
-		req.Header.Set("Authorization", "Bearer "+dc.token)
-	}
+	dc.setAuthorization(req)
 
 	resp, err := dc.httpClient.Do(req)
 	if err != nil {
